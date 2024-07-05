@@ -1,0 +1,375 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "91568216",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-05T17:28:50.045979Z",
+     "iopub.status.busy": "2024-07-05T17:28:50.045489Z",
+     "iopub.status.idle": "2024-07-05T17:29:30.001144Z",
+     "shell.execute_reply": "2024-07-05T17:29:29.999885Z"
+    },
+    "papermill": {
+     "duration": 39.964666,
+     "end_time": "2024-07-05T17:29:30.004402",
+     "exception": false,
+     "start_time": "2024-07-05T17:28:50.039736",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "2024-07-05 17:28:53.099938: E external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:9261] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered\n",
+      "2024-07-05 17:28:53.100085: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:607] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered\n",
+      "2024-07-05 17:28:53.265182: E external/local_xla/xla/stream_executor/cuda/cuda_blas.cc:1515] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered\n",
+      "/opt/conda/lib/python3.10/pty.py:89: RuntimeWarning: os.fork() was called. os.fork() is incompatible with multithreaded code, and JAX is multithreaded, so this will likely lead to a deadlock.\n",
+      "  pid, fd = os.forkpty()\n"
+     ]
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Processing /kaggle/input/autocorrect/autocorrect-2.6.1.tar\r\n",
+      "  Preparing metadata (setup.py) ... \u001b[?25l-\b \bdone\r\n",
+      "\u001b[?25hBuilding wheels for collected packages: autocorrect\r\n",
+      "  Building wheel for autocorrect (setup.py) ... \u001b[?25l-\b \b\\\b \bdone\r\n",
+      "\u001b[?25h  Created wheel for autocorrect: filename=autocorrect-2.6.1-py3-none-any.whl size=622364 sha256=a1b0df9eadb811a8d1a58265a7e27a5e441573f97cb2d2c99cc06bf302852789\r\n",
+      "  Stored in directory: /root/.cache/pip/wheels/db/69/42/0fb0421d2fe70d195a04665edc760cfe5fd341d7bb8d8e0aaa\r\n",
+      "Successfully built autocorrect\r\n",
+      "Installing collected packages: autocorrect\r\n",
+      "Successfully installed autocorrect-2.6.1\r\n"
+     ]
+    }
+   ],
+   "source": [
+    "# General imports\n",
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "from IPython.display import display\n",
+    "import random\n",
+    "import shutil\n",
+    "import warnings\n",
+    "import logging\n",
+    "import os\n",
+    "\n",
+    "# Neural network imports\n",
+    "import tensorflow as tf\n",
+    "from tensorflow import keras\n",
+    "from keras import layers\n",
+    "from keras.callbacks import EarlyStopping\n",
+    "from transformers import TFAutoModel, AutoTokenizer\n",
+    "\n",
+    "from utils import (move_to_working_folder, preprocess, PreTrainedModel,\n",
+    "                   build_deberta, ExpandDimsLayer, MaskedEmbeddingsLayer,\n",
+    "                   mcrmse, generate_predictions, seed_everything, Speller, CFG)\n",
+    "\n",
+    "\n",
+    "# Disabling unnecceseray warnings\n",
+    "warnings.simplefilter(\"ignore\")\n",
+    "logging.disable(logging.ERROR)\n",
+    "os.environ[\"TOKENIZERS_PARALLELISM\"] = \"false\"\n",
+    "\n",
+    "seed_everything(random_seed=CFG.random_seed)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "302ea896",
+   "metadata": {
+    "papermill": {
+     "duration": 0.004508,
+     "end_time": "2024-07-05T17:29:30.013928",
+     "exception": false,
+     "start_time": "2024-07-05T17:29:30.009420",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "### Load Model"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "f15f82aa",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-05T17:29:30.025311Z",
+     "iopub.status.busy": "2024-07-05T17:29:30.025029Z",
+     "iopub.status.idle": "2024-07-05T17:29:30.030624Z",
+     "shell.execute_reply": "2024-07-05T17:29:30.029693Z"
+    },
+    "papermill": {
+     "duration": 0.014395,
+     "end_time": "2024-07-05T17:29:30.033075",
+     "exception": false,
+     "start_time": "2024-07-05T17:29:30.018680",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# Choose the model to load\n",
+    "epochs = 12\n",
+    "CFG.final_model_path = f'full_model_scaled-{epochs}.keras'"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "5d17a4e1",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-05T17:29:30.044622Z",
+     "iopub.status.busy": "2024-07-05T17:29:30.044370Z",
+     "iopub.status.idle": "2024-07-05T17:31:05.481519Z",
+     "shell.execute_reply": "2024-07-05T17:31:05.480312Z"
+    },
+    "papermill": {
+     "duration": 95.450162,
+     "end_time": "2024-07-05T17:31:05.488344",
+     "exception": false,
+     "start_time": "2024-07-05T17:29:30.038182",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "/kaggle/working/full_model_scaled-12.keras loaded successfully\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Load the model \n",
+    "model_path = '/kaggle/working/' + CFG.final_model_path\n",
+    "move_to_working_folder('/kaggle/input/models/' + CFG.final_model_path, model_path)\n",
+    "\n",
+    "model = keras.models.load_model(model_path)\n",
+    "deberta = build_deberta()\n",
+    "print(f'{model_path} loaded successfully')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "13c7493b",
+   "metadata": {
+    "papermill": {
+     "duration": 0.004703,
+     "end_time": "2024-07-05T17:31:05.498064",
+     "exception": false,
+     "start_time": "2024-07-05T17:31:05.493361",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "### Sample Random Summary"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "ae376908",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-05T17:31:05.509820Z",
+     "iopub.status.busy": "2024-07-05T17:31:05.509553Z",
+     "iopub.status.idle": "2024-07-05T17:31:08.749183Z",
+     "shell.execute_reply": "2024-07-05T17:31:08.747960Z"
+    },
+    "papermill": {
+     "duration": 3.248837,
+     "end_time": "2024-07-05T17:31:08.751835",
+     "exception": false,
+     "start_time": "2024-07-05T17:31:05.502998",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "student_id: 12148\n",
+      "\n",
+      "prompt_question: Describe the process of photosynthesis and explain its importance in the plant kingdom. \n",
+      "\n",
+      "\n",
+      "\n",
+      "summary: Photosynthesis is the process through which plants produce oxygen and glucose. It happens in the chloroplasts of the plant cells which have a green pigment called chlorophyll. Sunlight, water, and carbon dioxide are the three critical components that the plant needs for photosynthesis. The first step of the process is absorbing sunlight and converting it into chemical energy. The plant then takes in water through the roots and split it into hydrogen ions and oxygen, which is then released into the atmosphere. Also, carbon dioxide combines with hydrogen ions to form glucose. This process is important to plants as it helps in the production of oxygen, source of energy through glucose production, and in maintaining balance in the atmosphere.\n"
+     ]
+    }
+   ],
+   "source": [
+    "df = pd.read_excel('/kaggle/input/llm-generate-test/LLM_Generate_Test.xlsx')\n",
+    "random_row = df.sample(n=1)\n",
+    "\n",
+    "student_id = random_row.iloc[0,0]\n",
+    "summary = random_row.iloc[0,3]\n",
+    "prompt_question = random_row.iloc[0,2]\n",
+    "prompt_text = random_row.iloc[0,1]\n",
+    "\n",
+    "print(f'student_id: {student_id}\\n')\n",
+    "print(f'prompt_question: {prompt_question}\\n')\n",
+    "print(f'summary: {summary}')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "454bb88e",
+   "metadata": {
+    "papermill": {
+     "duration": 0.004979,
+     "end_time": "2024-07-05T17:31:08.762115",
+     "exception": false,
+     "start_time": "2024-07-05T17:31:08.757136",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "### Score The Summary"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "78b6036b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-05T17:31:08.774268Z",
+     "iopub.status.busy": "2024-07-05T17:31:08.773978Z",
+     "iopub.status.idle": "2024-07-05T17:31:52.786585Z",
+     "shell.execute_reply": "2024-07-05T17:31:52.785593Z"
+    },
+    "papermill": {
+     "duration": 44.023233,
+     "end_time": "2024-07-05T17:31:52.790554",
+     "exception": false,
+     "start_time": "2024-07-05T17:31:08.767321",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\u001b[1m1/1\u001b[0m \u001b[32m━━━━━━━━━━━━━━━━━━━━\u001b[0m\u001b[37m\u001b[0m \u001b[1m44s\u001b[0m 44s/step\n",
+      "Grade of student: 12148\n",
+      "Content score: 1.6796875\n",
+      "Wording score: 0.22265625\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This function gets a students id, summary, prompt question and prompt text\n",
+    "# and scores the summary by content and wording\n",
+    "def run_demo(student_id, summary, prompt_question, prompt_text):\n",
+    "    input_ids, attention_mask, head_mask = preprocess(summary, prompt_question, prompt_text, deberta.tokenizer, is_demo=True)\n",
+    "    \n",
+    "    inputs = {\n",
+    "        'input_ids': input_ids,\n",
+    "        'attention_mask': attention_mask,\n",
+    "        'head_mask': head_mask,\n",
+    "        'student_id': [student_id],\n",
+    "    }\n",
+    "    content_score, wording_score = (generate_predictions(model, inputs))[1:]\n",
+    "    return content_score[0], wording_score[0]\n",
+    "\n",
+    "content_score, wording_score = run_demo(student_id, summary, prompt_question, prompt_text)\n",
+    "\n",
+    "print(f'Grade of student: {student_id}')\n",
+    "print(f'Content score: {content_score}')\n",
+    "print(f'Wording score: {wording_score}')"
+   ]
+  }
+ ],
+ "metadata": {
+  "kaggle": {
+   "accelerator": "none",
+   "dataSources": [
+    {
+     "databundleVersionId": 6201832,
+     "sourceId": 53482,
+     "sourceType": "competition"
+    },
+    {
+     "datasetId": 1825054,
+     "sourceId": 2977194,
+     "sourceType": "datasetVersion"
+    },
+    {
+     "datasetId": 4817190,
+     "sourceId": 8146152,
+     "sourceType": "datasetVersion"
+    },
+    {
+     "datasetId": 5115575,
+     "sourceId": 8558953,
+     "sourceType": "datasetVersion"
+    },
+    {
+     "datasetId": 5307916,
+     "sourceId": 8870053,
+     "sourceType": "datasetVersion"
+    },
+    {
+     "sourceId": 187010242,
+     "sourceType": "kernelVersion"
+    }
+   ],
+   "dockerImageVersionId": 30698,
+   "isGpuEnabled": false,
+   "isInternetEnabled": true,
+   "language": "python",
+   "sourceType": "notebook"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.13"
+  },
+  "papermill": {
+   "default_parameters": {},
+   "duration": 189.222611,
+   "end_time": "2024-07-05T17:31:56.196475",
+   "environment_variables": {},
+   "exception": null,
+   "input_path": "__notebook__.ipynb",
+   "output_path": "__notebook__.ipynb",
+   "parameters": {},
+   "start_time": "2024-07-05T17:28:46.973864",
+   "version": "2.5.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
