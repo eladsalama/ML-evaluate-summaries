@@ -3,8 +3,8 @@ As part of the machine learning and data analysis workshop at Tel-Aviv Univesity
 We acheived Kaggle bronze medal stardard, with a loss score of 0.48301, only 0.03 points behind the winners of the competition.
 
 ## **Performance**
-Private Score: 0.48301  
-Public Score: 0.49939
+Private Score (87% of the test data): 0.48301  
+Public Score (13% of the test data): 0.49939
 
 ## **References**
 Link to the competition: https://www.kaggle.com/competitions/commonlit-evaluate-student-summaries
